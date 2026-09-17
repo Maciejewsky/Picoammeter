@@ -284,9 +284,10 @@ class ChargeDischargeBlock(QWidget):
                 print(f"Erro ao desligar fonte: {exc}")
 
         if was_measuring and self.readings:
-            self.alert_label.setText(
-                "Medição finalizada. Fonte desligada."
-            )
+            # Apenas mostra "Medição finalizada" se não houver já uma mensagem de erro na label
+            current_alert = self.alert_label.text()
+            if not current_alert or current_alert == "Medição finalizada. Fonte desligada.":
+                self.alert_label.setText("Medição finalizada. Fonte desligada.")
 
     # ------------------------------------------------------------------
     # Configuração sequencial do 6487
