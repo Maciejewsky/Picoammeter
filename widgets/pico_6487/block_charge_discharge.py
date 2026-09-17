@@ -1,20 +1,18 @@
 # widgets/pico_6487/block_charge_discharge.py
 #
-# Medição de carga e descarga de capacitor com o Keithley 6487.
+# Medição de carga e descarga de capacitor no domínio do tempo (Cronoamperometria) com o Keithley 6487.
 #
-# O procedimento é baseado no bloco I x V existente:
+# O procedimento:
 # - configura a fonte e o amperímetro;
-# - aplica a tensão em passos;
-# - aguarda o intervalo configurado;
-# - executa READ? e registra corrente/tensão;
-# - faz a rampa de CARGA e, opcionalmente, a rampa de DESCARGA;
+# - Fase de Carga: aplica a Tensão de Carga configurada e mantém pelo Tempo de Carga;
+# - Fase de Descarga (opcional): zera a tensão (0.0 V) mantendo a fonte ligada e aguarda o Tempo de Descarga;
+# - executa READ? e registra corrente/tensão continuadamente de acordo com o intervalo;
 # - salva automaticamente os pontos em arquivo temporário;
 # - permite exportar a medição completa.
 #
 # IMPORTANTE:
-# Este bloco implementa uma carga/descarga por rampa de tensão.
-# A corrente medida é a corrente do capacitor durante a variação da
-# tensão. O circuito externo deve fornecer o caminho elétrico apropriado
+# Este bloco implementa uma carga/descarga baseada em tempo.
+# O circuito externo deve fornecer o caminho elétrico apropriado
 # para a descarga.
 
 from datetime import datetime, timedelta
@@ -49,10 +47,9 @@ class ChargeDischargeBlock(QWidget):
         self.temp_file_path = None
 
         self.v_current = 0.0
-        self.v_initial_value = 0.0
-        self.v_max_value = 0.0
-        self.v_step_value = 0.1
-        self.direction = 1
+        self.v_charge_value = 0.0
+        self.t_charge_value = 0.0
+        self.phase_start_time = None
 
         self.measure_timer = QTimer(self)
         self.measure_timer.timeout.connect(self.acquire_reading)
@@ -75,18 +72,14 @@ class ChargeDischargeBlock(QWidget):
         params_group = QGroupBox("Parâmetros de Carga / Descarga")
         params_layout = QVBoxLayout()
 
-        self.v_initial_spin = self._create_voltage_spin(0.0)
-        self._add_row(params_layout, "V inicial (V):", self.v_initial_spin)
+        self.v_charge_spin = self._create_voltage_spin(10.0)
+        self._add_row(params_layout, "Tensão de Carga (V):", self.v_charge_spin)
 
-        self.v_max_spin = self._create_voltage_spin(10.0)
-        self._add_row(params_layout, "V máxima (V):", self.v_max_spin)
-
-        self.v_step_spin = QDoubleSpinBox()
-        self.v_step_spin.setRange(0.001, 100.0)
-        self.v_step_spin.setDecimals(3)
-        self.v_step_spin.setValue(0.1)
-        self.v_step_spin.setStepType(QDoubleSpinBox.AdaptiveDecimalStepType)
-        self._add_row(params_layout, "Passo (V):", self.v_step_spin)
+        self.t_charge_spin = QDoubleSpinBox()
+        self.t_charge_spin.setRange(0.1, 100000.0)
+        self.t_charge_spin.setDecimals(1)
+        self.t_charge_spin.setValue(10.0)
+        self._add_row(params_layout, "Tempo de Carga (s):", self.t_charge_spin)
 
         self.ilim_spin = QDoubleSpinBox()
         self.ilim_spin.setRange(2.5e-6, 2.5e-2)
@@ -114,15 +107,6 @@ class ChargeDischargeBlock(QWidget):
         self.discharge_checkbox = QCheckBox("Executar descarga")
         self.discharge_checkbox.setChecked(True)
         params_layout.addWidget(self.discharge_checkbox)
-
-        self.return_to_initial_checkbox = QCheckBox(
-            "Ao final, voltar à tensão inicial"
-        )
-        self.return_to_initial_checkbox.setChecked(True)
-        self.return_to_initial_checkbox.setToolTip(
-            "Aplica V inicial antes de desligar a fonte."
-        )
-        params_layout.addWidget(self.return_to_initial_checkbox)
 
         params_buttons = QHBoxLayout()
 
@@ -231,18 +215,8 @@ class ChargeDischargeBlock(QWidget):
             self.toggle_button.blockSignals(False)
             return
 
-        v_initial = self.v_initial_spin.value()
-        v_max = self.v_max_spin.value()
-        v_step = self.v_step_spin.value()
-
-        if v_max <= v_initial:
-            QMessageBox.warning(
-                self,
-                "Parâmetros inválidos",
-                "A V máxima deve ser maior que a V inicial."
-            )
-            self._reset_toggle()
-            return
+        v_charge = self.v_charge_spin.value()
+        t_charge = self.t_charge_spin.value()
 
         if not self.charge_checkbox.isChecked() and not self.discharge_checkbox.isChecked():
             QMessageBox.warning(
@@ -262,9 +236,9 @@ class ChargeDischargeBlock(QWidget):
         self.first_reading_time = None
         self.start_time = datetime.now()
 
-        self.v_initial_value = v_initial
-        self.v_max_value = v_max
-        self.v_step_value = v_step
+        self.v_charge_value = v_charge
+        self.t_charge_value = t_charge
+        self.phase_start_time = None
 
         self.voltage_curve.setData([], [])
         self.current_curve.setData([], [])
@@ -304,14 +278,6 @@ class ChargeDischargeBlock(QWidget):
         self.toggle_button.setText("Iniciar Carga / Descarga")
 
         if self.instrument is not None:
-            try:
-                if self.return_to_initial_checkbox.isChecked():
-                    self.instrument.write(
-                        f"SOUR:VOLT {self.v_initial_spin.value()}"
-                    )
-            except Exception as exc:
-                print(f"Erro ao retornar à tensão inicial: {exc}")
-
             try:
                 self.instrument.write("SOUR:VOLT:STAT OFF")
             except Exception as exc:
@@ -353,12 +319,10 @@ class ChargeDischargeBlock(QWidget):
                 return
 
             self.v_current = (
-                self.v_initial_value
+                self.v_charge_value
                 if self.phase == "CARGA"
-                else self.v_max_value
+                else 0.0
             )
-
-            self.direction = 1 if self.phase == "CARGA" else -1
 
             self.instrument.write(f"SOUR:VOLT {self.v_current}")
 
@@ -403,12 +367,14 @@ class ChargeDischargeBlock(QWidget):
                 self.stop_measurement()
                 return
 
+            now = datetime.now()
             if self.first_reading_time is None:
-                self.first_reading_time = datetime.now()
+                self.first_reading_time = now
+                self.phase_start_time = now
                 relative_time = 0.0
             else:
                 relative_time = (
-                    datetime.now() - self.first_reading_time
+                    now - self.first_reading_time
                 ).total_seconds()
 
             # t, corrente, tensão, fase
@@ -418,72 +384,39 @@ class ChargeDischargeBlock(QWidget):
 
             self.update_display()
 
-            if self._advance_voltage():
-                self.measure_timer.start(
-                    int(self.interval_spin.value() * 1000)
-                )
-            else:
-                self._finish_or_change_phase()
+            phase_elapsed = (now - self.phase_start_time).total_seconds()
+
+            if self.phase == "CARGA":
+                if phase_elapsed >= self.t_charge_value:
+                    if self.discharge_checkbox.isChecked():
+                        # Transição para descarga
+                        self.phase = "DESCARGA"
+                        self.phase_start_time = now
+                        self.v_current = 0.0
+                        try:
+                            self.instrument.write(f"SOUR:VOLT {self.v_current}")
+                        except Exception as exc:
+                            self.alert_label.setText(f"Erro ao aplicar tensão 0.0V: {exc}")
+                            self.stop_measurement()
+                            return
+                    else:
+                        # Acabou teste sem descarga
+                        self.stop_measurement()
+                        return
+            elif self.phase == "DESCARGA":
+                # Na fase de descarga, continua medindo indefinidamente até o usuário parar
+                pass
+
+            # Continua medindo se não chamou stop_measurement
+            self.measure_timer.start(
+                int(self.interval_spin.value() * 1000)
+            )
 
         except Exception as exc:
             self.alert_label.setText(
                 f"Erro ao adquirir leitura: {exc}"
             )
             self.stop_measurement()
-
-    def _advance_voltage(self):
-        next_voltage = self.v_current + (
-            self.v_step_value * self.direction
-        )
-
-        if self.direction > 0:
-            if next_voltage >= self.v_max_value:
-                self.v_current = self.v_max_value
-                return False
-        else:
-            if next_voltage <= self.v_initial_value:
-                self.v_current = self.v_initial_value
-                return False
-
-        self.v_current = next_voltage
-
-        try:
-            self.instrument.write(f"SOUR:VOLT {self.v_current}")
-        except Exception as exc:
-            self.alert_label.setText(
-                f"Erro ao aplicar tensão: {exc}"
-            )
-            self.stop_measurement()
-            return False
-
-        return True
-
-    def _finish_or_change_phase(self):
-        # Terminamos a CARGA no ponto máximo.
-        if self.phase == "CARGA":
-            if self.discharge_checkbox.isChecked():
-                self.phase = "DESCARGA"
-                self.direction = -1
-                self.v_current = self.v_max_value
-
-                try:
-                    self.instrument.write(
-                        f"SOUR:VOLT {self.v_current}"
-                    )
-                    self.measure_timer.start(
-                        int(self.interval_spin.value() * 1000)
-                    )
-                except Exception as exc:
-                    self.alert_label.setText(
-                        f"Erro ao iniciar descarga: {exc}"
-                    )
-                    self.stop_measurement()
-            else:
-                self.stop_measurement()
-            return
-
-        # Terminamos a DESCARGA no ponto inicial.
-        self.stop_measurement()
 
     # ------------------------------------------------------------------
     # Display / autosave
@@ -530,13 +463,10 @@ class ChargeDischargeBlock(QWidget):
                     )
                     f.write(f"# Início: {self.start_time}\n")
                     f.write(
-                        f"# V inicial (V): {self.v_initial_spin.value()}\n"
+                        f"# Tensão de Carga (V): {self.v_charge_spin.value()}\n"
                     )
                     f.write(
-                        f"# V máxima (V): {self.v_max_spin.value()}\n"
-                    )
-                    f.write(
-                        f"# Passo (V): {self.v_step_spin.value()}\n"
+                        f"# Tempo de Carga (s): {self.t_charge_spin.value()}\n"
                     )
                     f.write(
                         "# Limite corrente (A): "
@@ -603,15 +533,13 @@ class ChargeDischargeBlock(QWidget):
         parameters = {
             "measurement_type": "charge_discharge",
             "instrument_type": "pico_6487",
-            "v_initial": self.v_initial_spin.value(),
-            "v_max": self.v_max_spin.value(),
-            "v_step": self.v_step_spin.value(),
+            "v_charge": self.v_charge_spin.value(),
+            "t_charge": self.t_charge_spin.value(),
             "current_limit": self.ilim_spin.value(),
             "nplc": self.nplc_spin.value(),
             "interval": self.interval_spin.value(),
             "charge": self.charge_checkbox.isChecked(),
             "discharge": self.discharge_checkbox.isChecked(),
-            "return_to_initial": self.return_to_initial_checkbox.isChecked(),
             "saved_at": datetime.now().isoformat(),
         }
 
@@ -672,14 +600,11 @@ class ChargeDischargeBlock(QWidget):
                 )
                 return
 
-            self.v_initial_spin.setValue(
-                parameters.get("v_initial", 0.0)
+            self.v_charge_spin.setValue(
+                parameters.get("v_charge", 10.0)
             )
-            self.v_max_spin.setValue(
-                parameters.get("v_max", 10.0)
-            )
-            self.v_step_spin.setValue(
-                parameters.get("v_step", 0.1)
+            self.t_charge_spin.setValue(
+                parameters.get("t_charge", 10.0)
             )
             self.ilim_spin.setValue(
                 parameters.get("current_limit", 0.025)
@@ -695,9 +620,6 @@ class ChargeDischargeBlock(QWidget):
             )
             self.discharge_checkbox.setChecked(
                 parameters.get("discharge", True)
-            )
-            self.return_to_initial_checkbox.setChecked(
-                parameters.get("return_to_initial", True)
             )
 
             QMessageBox.information(
@@ -785,16 +707,12 @@ class ChargeDischargeBlock(QWidget):
                 f.write("#\n")
                 f.write("# Parâmetros:\n")
                 f.write(
-                    f"# V inicial (V): "
-                    f"{self.v_initial_spin.value()}\n"
+                    f"# Tensão de Carga (V): "
+                    f"{self.v_charge_spin.value()}\n"
                 )
                 f.write(
-                    f"# V máxima (V): "
-                    f"{self.v_max_spin.value()}\n"
-                )
-                f.write(
-                    f"# Passo (V): "
-                    f"{self.v_step_spin.value()}\n"
+                    f"# Tempo de Carga (s): "
+                    f"{self.t_charge_spin.value()}\n"
                 )
                 f.write(
                     "# Limite corrente (A): "
