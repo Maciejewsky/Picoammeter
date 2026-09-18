@@ -49,6 +49,7 @@ class ChargeDischargeBlock(QWidget):
         self.v_current = 0.0
         self.v_charge_value = 0.0
         self.t_charge_value = 0.0
+        self.t_discharge_value = 0.0
         self.phase_start_time = None
 
         self.measure_timer = QTimer(self)
@@ -80,6 +81,12 @@ class ChargeDischargeBlock(QWidget):
         self.t_charge_spin.setDecimals(1)
         self.t_charge_spin.setValue(10.0)
         self._add_row(params_layout, "Tempo de Carga (s):", self.t_charge_spin)
+
+        self.t_discharge_spin = QDoubleSpinBox()
+        self.t_discharge_spin.setRange(0.1, 100000.0)
+        self.t_discharge_spin.setDecimals(1)
+        self.t_discharge_spin.setValue(10.0)
+        self._add_row(params_layout, "Tempo de Descarga (s):", self.t_discharge_spin)
 
         self.ilim_spin = QDoubleSpinBox()
         self.ilim_spin.setRange(2.5e-6, 2.5e-2)
@@ -217,6 +224,7 @@ class ChargeDischargeBlock(QWidget):
 
         v_charge = self.v_charge_spin.value()
         t_charge = self.t_charge_spin.value()
+        t_discharge = self.t_discharge_spin.value()
 
         if not self.charge_checkbox.isChecked() and not self.discharge_checkbox.isChecked():
             QMessageBox.warning(
@@ -238,6 +246,7 @@ class ChargeDischargeBlock(QWidget):
 
         self.v_charge_value = v_charge
         self.t_charge_value = t_charge
+        self.t_discharge_value = t_discharge
         self.phase_start_time = None
 
         self.voltage_curve.setData([], [])
@@ -395,6 +404,7 @@ class ChargeDischargeBlock(QWidget):
                         self.v_current = 0.0
                         try:
                             self.instrument.write(f"SOUR:VOLT {self.v_current}")
+                            self.instrument.write("SOUR:VOLT:STAT ON")
                         except Exception as exc:
                             self.alert_label.setText(f"Erro ao aplicar tensão 0.0V: {exc}")
                             self.stop_measurement()
@@ -404,8 +414,9 @@ class ChargeDischargeBlock(QWidget):
                         self.stop_measurement()
                         return
             elif self.phase == "DESCARGA":
-                # Na fase de descarga, continua medindo indefinidamente até o usuário parar
-                pass
+                if phase_elapsed >= self.t_discharge_value:
+                    self.stop_measurement()
+                    return
 
             # Continua medindo se não chamou stop_measurement
             self.measure_timer.start(
@@ -467,6 +478,9 @@ class ChargeDischargeBlock(QWidget):
                     )
                     f.write(
                         f"# Tempo de Carga (s): {self.t_charge_spin.value()}\n"
+                    )
+                    f.write(
+                        f"# Tempo de Descarga (s): {self.t_discharge_spin.value()}\n"
                     )
                     f.write(
                         "# Limite corrente (A): "
@@ -535,6 +549,7 @@ class ChargeDischargeBlock(QWidget):
             "instrument_type": "pico_6487",
             "v_charge": self.v_charge_spin.value(),
             "t_charge": self.t_charge_spin.value(),
+            "t_discharge": self.t_discharge_spin.value(),
             "current_limit": self.ilim_spin.value(),
             "nplc": self.nplc_spin.value(),
             "interval": self.interval_spin.value(),
@@ -605,6 +620,9 @@ class ChargeDischargeBlock(QWidget):
             )
             self.t_charge_spin.setValue(
                 parameters.get("t_charge", 10.0)
+            )
+            self.t_discharge_spin.setValue(
+                parameters.get("t_discharge", 10.0)
             )
             self.ilim_spin.setValue(
                 parameters.get("current_limit", 0.025)
@@ -713,6 +731,10 @@ class ChargeDischargeBlock(QWidget):
                 f.write(
                     f"# Tempo de Carga (s): "
                     f"{self.t_charge_spin.value()}\n"
+                )
+                f.write(
+                    f"# Tempo de Descarga (s): "
+                    f"{self.t_discharge_spin.value()}\n"
                 )
                 f.write(
                     "# Limite corrente (A): "
