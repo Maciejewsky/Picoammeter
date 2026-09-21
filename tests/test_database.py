@@ -16,6 +16,8 @@ from core.database import DatabaseManager, get_database_manager
 from core.user_manager import get_user_manager
 
 
+import uuid
+
 def test_database_functionality():
     """Test database functionality"""
     print("=" * 50)
@@ -26,12 +28,14 @@ def test_database_functionality():
     user_manager = get_user_manager()
     db_manager = get_database_manager(user_manager)
     
+    test_username = f"test_user_{uuid.uuid4().hex[:8]}"
+
     # Test user management
-    user_id = db_manager.add_user("test_user", "Test", "User", {"theme": "dark"})
+    user_id = db_manager.add_user(test_username, "Test", "User", {"theme": "dark"})
     print(f"✅ User added to database: {user_id}")
     
     # Get user back
-    user = db_manager.get_user_by_username("test_user")
+    user = db_manager.get_user_by_username(test_username)
     print(f"✅ User retrieved: {user['first_name']} {user['last_name']}")
     
     # Test instrument management
@@ -174,7 +178,8 @@ def test_database_integration():
     user_manager = get_user_manager()
     
     # Create a new user
-    username = user_manager.create_user_profile("Database", "Tester")
+    unique_suffix = uuid.uuid4().hex[:8]
+    username = user_manager.create_user_profile(f"Database_{unique_suffix}", "Tester")
     print(f"✅ User created via user manager: {username}")
     
     # Get database manager
