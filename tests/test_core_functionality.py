@@ -42,12 +42,17 @@ def test_user_management():
     return username
 
 
-def test_logging(username):
+import uuid
+
+def test_logging(username=None):
     """Test logging functionality"""
     print("\n" + "=" * 50)
     print("Testing Logging System")
     print("=" * 50)
     
+    if username is None:
+        username = f"test_user_{uuid.uuid4().hex[:8]}"
+
     logger = init_logging(username)
     
     # Test different log levels
