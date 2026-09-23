@@ -308,12 +308,15 @@ class ChargeDischargeBlock(QWidget):
         nplc = self.nplc_spin.value()
         i_limit = self.ilim_spin.value()
 
+        self.v_current = self.v_charge_value if self.phase == "CARGA" else 0.0
+
         commands = [
             "*RST",
             "FORM:ELEM READ,VSO",
             "SYST:ZCH ON",
             f"SENS:CURR:NPLC {nplc}",
             f"SOUR:VOLT:ILIM {i_limit}",
+            f"SOUR:VOLT {self.v_current}",
             "SOUR:VOLT:STAT ON",
             "SYST:ZCH OFF",
         ]
@@ -326,14 +329,6 @@ class ChargeDischargeBlock(QWidget):
                     lambda: self.configure_instrument_step(step + 1)
                 )
                 return
-
-            self.v_current = (
-                self.v_charge_value
-                if self.phase == "CARGA"
-                else 0.0
-            )
-
-            self.instrument.write(f"SOUR:VOLT {self.v_current}")
 
             # Dá tempo para a fonte estabilizar antes da primeira leitura.
             QTimer.singleShot(

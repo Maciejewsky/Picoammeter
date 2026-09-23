@@ -42,7 +42,7 @@ def test_user_management():
     return username
 
 
-def test_logging(username):
+def check_logging(username):
     """Test logging functionality"""
     print("\n" + "=" * 50)
     print("Testing Logging System")
@@ -216,7 +216,7 @@ def run_all_tests():
         username = test_user_management()
         
         # Test logging
-        test_logging(username)
+        check_logging(username)
         
         # Test configuration
         test_configuration()
