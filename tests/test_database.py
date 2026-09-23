@@ -27,11 +27,13 @@ def test_database_functionality():
     db_manager = get_database_manager(user_manager)
     
     # Test user management
-    user_id = db_manager.add_user("test_user", "Test", "User", {"theme": "dark"})
+    import uuid
+    test_username = f"test_user_{uuid.uuid4().hex[:8]}"
+    user_id = db_manager.add_user(test_username, "Test", "User", {"theme": "dark"})
     print(f"✅ User added to database: {user_id}")
     
     # Get user back
-    user = db_manager.get_user_by_username("test_user")
+    user = db_manager.get_user_by_username(test_username)
     print(f"✅ User retrieved: {user['first_name']} {user['last_name']}")
     
     # Test instrument management
@@ -173,8 +175,10 @@ def test_database_integration():
     # Test with user manager
     user_manager = get_user_manager()
     
+    import uuid
     # Create a new user
-    username = user_manager.create_user_profile("Database", "Tester")
+    username = f"database_tester_{uuid.uuid4().hex[:8]}"
+    user_manager.create_user_profile(username, "Tester")
     print(f"✅ User created via user manager: {username}")
     
     # Get database manager
