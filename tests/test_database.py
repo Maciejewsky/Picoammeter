@@ -27,7 +27,8 @@ def test_database_functionality():
     db_manager = get_database_manager(user_manager)
     
     # Test user management
-    user_id = db_manager.add_user("test_user", "Test", "User", {"theme": "dark"})
+    import uuid
+    user_id = db_manager.add_user(f"test_user_{uuid.uuid4().hex[:8]}", "Test", "User", {"theme": "dark"})
     print(f"✅ User added to database: {user_id}")
     
     # Get user back
@@ -174,7 +175,8 @@ def test_database_integration():
     user_manager = get_user_manager()
     
     # Create a new user
-    username = user_manager.create_user_profile("Database", "Tester")
+    import uuid
+    username = user_manager.create_user_profile("Database", f"Tester_{uuid.uuid4().hex[:8]}")
     print(f"✅ User created via user manager: {username}")
     
     # Get database manager
