@@ -27,11 +27,13 @@ def test_database_functionality():
     db_manager = get_database_manager(user_manager)
     
     # Test user management
-    user_id = db_manager.add_user("test_user", "Test", "User", {"theme": "dark"})
+    import uuid
+    test_username = f"test_user_{uuid.uuid4().hex[:8]}"
+    user_id = db_manager.add_user(test_username, "Test", "User", {"theme": "dark"})
     print(f"✅ User added to database: {user_id}")
     
     # Get user back
-    user = db_manager.get_user_by_username("test_user")
+    user = db_manager.get_user_by_username(test_username)
     print(f"✅ User retrieved: {user['first_name']} {user['last_name']}")
     
     # Test instrument management
@@ -174,7 +176,17 @@ def test_database_integration():
     user_manager = get_user_manager()
     
     # Create a new user
-    username = user_manager.create_user_profile("Database", "Tester")
+    import uuid
+    username = f"db_tester_{uuid.uuid4().hex[:8]}"
+    try:
+        user_manager.create_user_profile("Database", "Tester", username=username)
+    except TypeError:
+        # If create_user_profile doesn't accept username
+        user_manager.create_user_profile("Database", "Tester")
+        username = user_manager.get_current_user_info()['username']
+        # to ensure it's unique, we might append uuid to last_name
+        last_name_unique = f"Tester_{uuid.uuid4().hex[:8]}"
+        username = user_manager.create_user_profile("Database", last_name_unique)
     print(f"✅ User created via user manager: {username}")
     
     # Get database manager

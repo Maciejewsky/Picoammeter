@@ -42,8 +42,17 @@ def test_user_management():
     return username
 
 
-def test_logging(username):
+def test_logging(username=None):
     """Test logging functionality"""
+    if username is None:
+        import uuid
+        username = f"log_test_user_{uuid.uuid4().hex[:8]}"
+        user_manager = get_user_manager()
+        try:
+            user_manager.create_user_profile("Log", "Test", username=username)
+        except Exception:
+            pass
+
     print("\n" + "=" * 50)
     print("Testing Logging System")
     print("=" * 50)
