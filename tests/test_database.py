@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import tempfile
 import json
+import uuid
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -27,7 +28,7 @@ def test_database_functionality():
     db_manager = get_database_manager(user_manager)
     
     # Test user management
-    user_id = db_manager.add_user("test_user", "Test", "User", {"theme": "dark"})
+    user_id = db_manager.add_user(f"test_user_{uuid.uuid4().hex[:8]}", "Test", "User", {"theme": "dark"})
     print(f"✅ User added to database: {user_id}")
     
     # Get user back
@@ -174,7 +175,7 @@ def test_database_integration():
     user_manager = get_user_manager()
     
     # Create a new user
-    username = user_manager.create_user_profile("Database", "Tester")
+    username = user_manager.create_user_profile(f"Database_{uuid.uuid4().hex[:8]}", "Tester")
     print(f"✅ User created via user manager: {username}")
     
     # Get database manager
